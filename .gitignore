@@ -1,0 +1,26 @@
+# CMake
+/build/
+/build-*/
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+
+# Compilers / binaries
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+
+# IDEs
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+Desktop.ini
