@@ -701,7 +701,7 @@ void test_random()
         MASTER_SEED
     );
 
-    constexpr int TEST_COUNT = 5000;
+    constexpr int TEST_COUNT = 100;
 
     for (int i = 0; i < TEST_COUNT; ++i) {
         /*

@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
+#include <iterator>
+#include <cstddef>
 
 class ConditionalRange {
 public:
@@ -46,7 +48,12 @@ private:
      */
     int64_t wheel_period_ = 1;
 
-    std::vector<int64_t> wheel_residues_;
+    /*
+     * 周期1における唯一の剰余0。
+     *
+     * wheel構築はこの候補から始める。
+     */
+    std::vector<int64_t> wheel_residues_{0};
 
     /*
      * wheelに入らなかった条件。
@@ -256,14 +263,17 @@ private:
         }
 
         /*
-         * まず明らかな冗長条件を除去する。
-         *
-         * all true:
-         *   条件として意味がないので削除。
-         *
-         * all false:
-         *   何をしても成立しないのでrange全体が空。
-         */
+        * --------------------------------------------------------
+        * まず明らかな冗長条件を除去する。
+        *
+        * all true:
+        *     条件として意味がないので削除。
+        *
+        * all false:
+        *     どんなxも条件を満たせないのでrange全体が空。
+        * --------------------------------------------------------
+        */
+
         std::vector<Condition> useful;
 
         useful.reserve(conditions.size());
@@ -282,14 +292,15 @@ private:
         }
 
         /*
-         * 小さいmodulusから処理する。
-         *
-         * 今回のような
-         *
-         *   2,3,5,7,11,13,...
-         *
-         * を想定すると自然に小さいwheelから育つ。
-         */
+        * 条件をmodulusの小さい順に処理する。
+        *
+        * 例えば
+        *
+        *     2, 3, 5, 7, 11, ...
+        *
+        * のような典型的な入力では、
+        * wheelを小さいものから段階的に構築できる。
+        */
         std::sort(
             useful.begin(),
             useful.end(),
@@ -299,74 +310,146 @@ private:
         );
 
         /*
-         * wheelに入れる条件を決定する。
-         *
-         * 新しいmodulusを加えたLCMが
-         * MAX_WHEEL_PERIOD以下ならwheelに入れる。
-         *
-         * 超えるならremainingへ。
-         */
-        std::vector<Condition> wheel_conditions;
+        * --------------------------------------------------------
+        * wheel構築
+        *
+        * wheel_period_ の範囲を直接全探索するのではなく、
+        *
+        *     「現在既に許可されている剰余」
+        *
+        * だけを次のmodulusへ拡張していく。
+        * --------------------------------------------------------
+        */
 
         for (auto& condition : useful) {
             int64_t new_period;
 
-            if (try_lcm(
+            if (!try_lcm(
                     wheel_period_,
                     condition.modulus,
                     new_period
-                ) &&
-                new_period <= MAX_WHEEL_PERIOD)
+                ) ||
+                new_period > MAX_WHEEL_PERIOD)
             {
-                wheel_period_ = new_period;
-                wheel_conditions.push_back(
-                    std::move(condition)
-                );
-            }
-            else {
+                /*
+                * これ以上wheelを拡張すると大きくなりすぎる。
+                *
+                * この条件はwheel構築後の候補に対して
+                * 通常通り検査する。
+                */
                 remaining_conditions_.push_back(
                     std::move(condition)
                 );
+
+                continue;
             }
-        }
 
-        /*
-         * wheel_period_の範囲を直接走査して、
-         * wheel_conditionsを全て満たす剰余だけ保存する。
-         *
-         * 今回の想定では最大1000万程度なので、
-         * range生成ごとに一度これを行う。
-         */
-        wheel_residues_.reserve(
-            static_cast<std::size_t>(
-                wheel_period_ / 4
-            )
-        );
+            /*
+            * 現在の周期Pと新しいmodulus mについて、
+            *
+            *     g = gcd(P, m)
+            *     q = m / g
+            *
+            * とすると、
+            *
+            *     lcm(P,m) = P*q
+            *
+            * である。
+            *
+            * 既存の各residue rについて
+            *
+            *     r + k*P
+            *
+            *     k = 0 ... q-1
+            *
+            * を生成すれば、new_period内の全ての候補を
+            * ちょうど一度ずつ生成できる。
+            */
 
-        for (int64_t r = 0; r < wheel_period_; ++r) {
-            bool ok = true;
+            const int64_t g =
+                gcd_i64(wheel_period_, condition.modulus);
 
-            for (const auto& condition : wheel_conditions) {
-                if (!condition.allowed[
-                    static_cast<std::size_t>(
-                        r % condition.modulus
-                    )
-                ]) {
-                    ok = false;
-                    break;
+            const int64_t copies =
+                condition.modulus / g;
+
+            /*
+            * 最初の条件では
+            *
+            *     wheel_residues_ = [0]
+            *     wheel_period_ = 1
+            *
+            * なので、このループだけで自然に
+            * 最初のwheelを構築できる。
+            */
+            std::vector<int64_t> next_residues;
+
+            /*
+            * 最大サイズの見積もり。
+            *
+            * 実際にはconditionによって大量に削られるので、
+            * 必ずしもこのサイズにはならない。
+            *
+            * size_t overflowを避けるため、上限を確認してから
+            * reserveする。
+            */
+            const std::size_t old_size =
+                wheel_residues_.size();
+
+            const std::size_t copies_size =
+                static_cast<std::size_t>(copies);
+
+            if (copies_size != 0 &&
+                old_size <=
+                    std::numeric_limits<std::size_t>::max()
+                    / copies_size)
+            {
+                next_residues.reserve(
+                    old_size * copies_size
+                );
+            }
+
+            for (const int64_t residue : wheel_residues_) {
+                for (int64_t k = 0; k < copies; ++k) {
+                    const int64_t candidate =
+                        residue + k * wheel_period_;
+
+                    const int64_t condition_residue =
+                        candidate % condition.modulus;
+
+                    if (condition.allowed[
+                        static_cast<std::size_t>(
+                            condition_residue
+                        )
+                    ]) {
+                        next_residues.push_back(candidate);
+                    }
                 }
             }
 
-            if (ok) {
-                wheel_residues_.push_back(r);
+            wheel_period_ = new_period;
+            wheel_residues_ = std::move(next_residues);
+
+            /*
+            * この時点で候補が0個なら、
+            * 残りの条件を見るまでもなく空。
+            */
+            if (wheel_residues_.empty()) {
+                empty_ = true;
+                return;
             }
         }
 
         /*
-         * wheel条件を満たす剰余が一つもなければ空。
-         */
+        * 条件が一つもwheelに入らなかった場合も含め、
+        * 条件が存在しない場合には全整数を許可する。
+        *
+        * wheel_period_ = 1
+        * wheel_residues_ = [0]
+        *
+        * としておく。
+        */
         if (wheel_residues_.empty()) {
-            empty_ = true;
+            wheel_residues_.push_back(0);
         }
     }
 
