@@ -176,12 +176,12 @@ void assert_equal(
         return;
     }
 
-    std::cerr << "\n";
-    std::cerr << "TEST FAILURE\n";
-    std::cerr << "Context: " << context << "\n";
-    std::cerr << "Expected size: "
+    std::cout << "\n";
+    std::cout << "TEST FAILURE\n";
+    std::cout << "Context: " << context << "\n";
+    std::cout << "Expected size: "
               << expected.size() << "\n";
-    std::cerr << "Actual size:   "
+    std::cout << "Actual size:   "
               << actual.size() << "\n";
 
     const std::size_t common =
@@ -189,7 +189,7 @@ void assert_equal(
 
     for (std::size_t i = 0; i < common; ++i) {
         if (expected[i] != actual[i]) {
-            std::cerr
+            std::cout
                 << "First difference at index "
                 << i << "\n"
                 << "Expected: "
@@ -203,13 +203,13 @@ void assert_equal(
 
     if (expected.size() != actual.size()) {
         if (expected.size() > common) {
-            std::cerr
+            std::cout
                 << "Expected has additional values starting at "
                 << expected[common] << "\n";
         }
 
         if (actual.size() > common) {
-            std::cerr
+            std::cout
                 << "Actual has additional values starting at "
                 << actual[common] << "\n";
         }
@@ -233,23 +233,56 @@ void check_case(
     const auto expected =
         naive(min, max, conditions);
 
+    std::cout << "before ConditionalRange" << std::endl;
+
     ConditionalRange range(
         min,
         max,
         conditions
     );
 
+    std::cout << "after ConditionalRange" << std::endl;
+
     std::vector<int64_t> actual;
+
+    std::cout << "before iteration" << std::endl;
+
+    std::size_t count = 0;
 
     for (const int64_t x : range) {
         actual.push_back(x);
+
+        ++count;
+
+        if (count < 100) {
+            std::cout << "x = " << x << std::endl;
+        }
+
+        if (count > 1000) {
+            std::cout
+                << "ERROR: iteration exceeded 1000 elements"
+                << std::endl;
+            break;
+        }
     }
 
+    std::cout << "after iteration" << std::endl;
+
+    std::cout << "before assert_equal" << std::endl;
+
+    std::cout << "assert_equal entered" << std::endl;
+    std::cout << "expected.size() = " << expected.size() << std::endl;
+    std::cout << "actual.size() = " << actual.size() << std::endl;
+    std::cout << "checking sizes" << std::endl;
+    
     assert_equal(
         expected,
         actual,
         context
     );
+
+    std::cout << "after assert_equal" << std::endl;
+
 }
 
 
@@ -306,6 +339,20 @@ void test_single_condition()
     std::vector<Condition> conditions = {
         {3, b}
     };
+
+    ConditionalRange range(
+        -100,
+        100,
+        conditions
+    );
+
+    std::cout << "wheel_period = "
+              << range.wheel_period()
+              << '\n';
+
+    std::cout << "wheel_size = "
+              << range.wheel_size()
+              << '\n';
 
     check_case(
         -100,
@@ -704,6 +751,9 @@ void test_random()
     constexpr int TEST_COUNT = 100;
 
     for (int i = 0; i < TEST_COUNT; ++i) {
+
+        std::cout << "TEST " << i << std::endl;
+
         /*
          * Give every test its own seed.
          * This makes it easy to reproduce a specific failure.

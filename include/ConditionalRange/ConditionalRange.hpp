@@ -8,6 +8,7 @@
 #include <vector>
 #include <iterator>
 #include <cstddef>
+#include <optional>
 
 class ConditionalRange {
 public:
@@ -201,7 +202,7 @@ private:
     // iteratorが次の値を探す
     // ------------------------------------------------------------
 
-    int64_t first_x_for_residue(
+    std::optional<int64_t> first_x_for_residue(
         int64_t residue
     ) const
     {
@@ -210,43 +211,36 @@ private:
          *
          * かつ x >= min_
          *
-         * となる最小のx。
+         * となる最小のxを求める。
+         *
+         * ここでは min_ - residue の計算を行わない。
+         * min_ が INT64_MIN に近い場合、
+         * min_ - residue が int64_t の範囲を超えるため。
+         *
+         * min_ を wheel_period_ で割った余りから直接、
+         * 次に現れる residue までの距離を求める。
          */
+        const int64_t min_residue =
+            positive_mod(min_, wheel_period_);
 
-        const int64_t diff = min_ - residue;
-
-        const int64_t k = ceil_div(
-            diff,
-            wheel_period_
-        );
+        const int64_t delta =
+            positive_mod(
+                residue - min_residue,
+                wheel_period_
+            );
 
         /*
-         * ここでの積がint64_tを超えることは、
-         * min/maxとwheel_periodの範囲から通常は起きないが、
-         * 念のため安全に扱う。
+         * delta >= 0 なので、加算がoverflowする場合は
+         * このresidue系列には int64_t の範囲内で
+         * min_ 以上の値が存在しない。
          */
-
-        if (k > 0) {
-            const int64_t max_k =
-                (std::numeric_limits<int64_t>::max() - residue)
-                / wheel_period_;
-
-            if (k > max_k) {
-                return std::numeric_limits<int64_t>::max();
-            }
+        if (delta >
+            std::numeric_limits<int64_t>::max() - min_)
+        {
+            return std::nullopt;
         }
 
-        if (k < 0) {
-            const int64_t min_k =
-                (std::numeric_limits<int64_t>::min() - residue)
-                / wheel_period_;
-
-            if (k < min_k) {
-                return std::numeric_limits<int64_t>::min();
-            }
-        }
-
-        return residue + k * wheel_period_;
+        return min_ + delta;
     }
 
     // ------------------------------------------------------------
@@ -473,6 +467,20 @@ public:
                 return;
             }
 
+            /*
+             * 条件が一つもない場合は全てのxが有効。
+             * wheel = {0}, period = 1 は「全整数」を表すので、
+             * current_ をそのまま返せばよい。
+             */
+            if (range_->remaining_conditions_.empty() &&
+                range_->wheel_period_ == 1 &&
+                range_->wheel_residues_.size() == 1 &&
+                range_->wheel_residues_[0] == 0)
+            {
+                end_ = current_ > range_->max_;
+                return;
+            }
+
             while (residue_index_ <
                    range_->wheel_residues_.size())
             {
@@ -480,63 +488,44 @@ public:
                     range_->wheel_residues_[residue_index_];
 
                 /*
-                 * current_がこのresidue系列上で
-                 * 最初にmin以上になる値。
+                 * このresidue系列で current_ 以上となる
+                 * 最小の値を求める。
+                 *
+                 * current_ は常に int64_t の範囲内なので、
+                 * first_x_for_residue() と同様に
+                 * 「差分を直接計算する」のではなく、
+                 * 余りから距離を求める。
                  */
-                int64_t candidate;
+                const int64_t current_residue =
+                    positive_mod(
+                        current_,
+                        range_->wheel_period_
+                    );
 
-                if (current_ <=
-                    range_->first_x_for_residue(residue))
+                const int64_t delta =
+                    positive_mod(
+                        residue - current_residue,
+                        range_->wheel_period_
+                    );
+
+                /*
+                 * current_ + delta がoverflowするなら、
+                 * この系列には current_ 以上の
+                 * int64_t 値がもう存在しない。
+                 */
+                if (delta >
+                    std::numeric_limits<int64_t>::max()
+                    - current_)
                 {
-                    candidate =
-                        range_->first_x_for_residue(residue);
+                    ++residue_index_;
+                    continue;
                 }
-                else {
-                    /*
-                     * 現在位置より後ろにある
-                     * 同じresidue系列の値を求める。
-                     */
-                    const int64_t diff =
-                        current_ - residue;
 
-                    const int64_t k =
-                        ceil_div(
-                            diff,
-                            range_->wheel_period_
-                        );
-
-                    /*
-                     * candidate = residue + k * period
-                     */
-                    if (k > 0 &&
-                        k >
-                        (std::numeric_limits<int64_t>::max()
-                         - residue)
-                        / range_->wheel_period_)
-                    {
-                        ++residue_index_;
-                        continue;
-                    }
-
-                    candidate =
-                        residue +
-                        k * range_->wheel_period_;
-                }
+                const int64_t candidate =
+                    current_ + delta;
 
                 if (candidate > range_->max_) {
                     ++residue_index_;
-
-                    if (residue_index_ <
-                        range_->wheel_residues_.size())
-                    {
-                        current_ =
-                            range_->first_x_for_residue(
-                                range_->wheel_residues_[
-                                    residue_index_
-                                ]
-                            );
-                    }
-
                     continue;
                 }
 
@@ -602,7 +591,11 @@ public:
             }
 
             /*
-             * 同じresidue系列の次の値をまず試す。
+             * 現在の候補の次から探索する。
+             *
+             * 加算がoverflowする場合は、現在の
+             * residue系列を使い切ったものとして
+             * 次の系列へ移る。
              */
             if (current_ >
                 std::numeric_limits<int64_t>::max()
@@ -617,12 +610,11 @@ public:
                     return *this;
                 }
 
-                current_ =
-                    range_->first_x_for_residue(
-                        range_->wheel_residues_[
-                            residue_index_
-                        ]
-                    );
+                /*
+                 * seek_next_valid() が新しい系列の
+                 * 最初の値を求める。
+                 */
+                current_ = range_->min_;
             }
             else {
                 current_ += range_->wheel_period_;
