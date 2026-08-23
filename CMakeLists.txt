@@ -45,6 +45,19 @@ target_link_libraries(conditional_range_example
 )
 
 # ------------------------------------------------------------
+# Benchmark
+# ------------------------------------------------------------
+
+add_executable(conditional_range_benchmark
+    benchmarks/benchmark_ConditionalRange.cpp
+)
+
+target_link_libraries(conditional_range_benchmark
+    PRIVATE
+        ConditionalRange
+)
+
+# ------------------------------------------------------------
 # Tests
 # ------------------------------------------------------------
 

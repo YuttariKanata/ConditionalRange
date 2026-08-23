@@ -2,7 +2,8 @@
 param(
     [switch]$Clean,
     [switch]$NoExample,
-    [switch]$VerboseBuild
+    [switch]$VerboseBuild,
+    [switch]$Benchmark
 )
 
 $ErrorActionPreference = "Stop"
@@ -156,6 +157,26 @@ Invoke-Checked "ctest" @(
     "--test-dir", $BuildDir,
     "--output-on-failure"
 )
+
+# ============================================================
+# Run benchmark
+# ============================================================
+
+if ($Benchmark) {
+    Write-Step "Running benchmark"
+
+    $BenchmarkExe = Join-Path $BuildDir "conditional_range_benchmark.exe"
+
+    if (-not (Test-Path $BenchmarkExe)) {
+        Fail "Benchmark executable was not found: $BenchmarkExe"
+    }
+
+    & $BenchmarkExe
+
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Benchmark exited with code $LASTEXITCODE"
+    }
+}
 
 # ============================================================
 # Run example
