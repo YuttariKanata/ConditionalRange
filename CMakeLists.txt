@@ -51,6 +51,11 @@ target_link_libraries(conditional_range_example
 include(CTest)
 
 if (BUILD_TESTING)
+
+    # --------------------------------------------------------
+    # Main tests
+    # --------------------------------------------------------
+
     add_executable(conditional_range_tests
         tests/test_ConditionalRange.cpp
     )
@@ -64,4 +69,24 @@ if (BUILD_TESTING)
         NAME ConditionalRangeTests
         COMMAND conditional_range_tests
     )
+
+
+    # --------------------------------------------------------
+    # Corner-case tests
+    # --------------------------------------------------------
+
+    add_executable(conditional_range_tests2
+        tests/test2_ConditionalRange.cpp
+    )
+
+    target_link_libraries(conditional_range_tests2
+        PRIVATE
+            ConditionalRange
+    )
+
+    add_test(
+        NAME ConditionalRangeCornerCaseTests
+        COMMAND conditional_range_tests2
+    )
+
 endif()
