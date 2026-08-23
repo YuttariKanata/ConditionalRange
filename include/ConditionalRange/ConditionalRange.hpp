@@ -1,6 +1,4 @@
-
 #pragma once
-#pragma message("===== ConditionalRange.hpp VERSION 2026-08-23-FINAL =====")
 
 #include <algorithm>
 #include <cstddef>
@@ -10,7 +8,7 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
-#include <iostream>
+
 
 class ConditionalRange {
 public:
@@ -454,32 +452,12 @@ public:
             bool is_end
         )
             : range_(range),
-            current_(0),
-            end_(is_end)
+              current_(0),
+              end_(is_end)
         {
-            std::cout
-                << "[iterator ctor]"
-                << " range=" << range_
-                << " is_end=" << is_end
-                << " end_=" << end_
-                << '\n';
-
             if (!is_end && range_ != nullptr) {
                 current_ = range_->min_;
-
-                std::cout
-                    << "[iterator ctor before seek]"
-                    << " current=" << current_
-                    << " end_=" << end_
-                    << '\n';
-
                 seek_next_valid();
-
-                std::cout
-                    << "[iterator ctor after seek]"
-                    << " current=" << current_
-                    << " end_=" << end_
-                    << '\n';
             }
         }
 

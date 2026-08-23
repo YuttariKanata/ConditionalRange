@@ -233,56 +233,13 @@ void check_case(
     const auto expected =
         naive(min, max, conditions);
 
-    std::cout << "before ConditionalRange" << std::endl;
-
     ConditionalRange range(
         min,
         max,
         conditions
     );
 
-    std::cout << "after ConditionalRange" << std::endl;
-
-    std::cout << "range.empty() = "
-            << range.empty()
-            << '\n';
-
-    std::cout << "range.min() = "
-            << range.min()
-            << '\n';
-
-    std::cout << "range.max() = "
-            << range.max()
-            << '\n';
-
-    std::cout << "range.wheel_period() = "
-            << range.wheel_period()
-            << '\n';
-
-    std::cout << "range.wheel_size() = "
-            << range.wheel_size()
-            << '\n';
-
-    std::cout << "after ConditionalRange" << std::endl;
-
     std::vector<int64_t> actual;
-
-    std::cout << "before iteration" << std::endl;
-
-    auto debug_begin = range.begin();
-    auto debug_end = range.end();
-
-    std::cout
-        << "debug_begin == debug_end: "
-        << (debug_begin == debug_end)
-        << '\n';
-
-    if (debug_begin != debug_end) {
-        std::cout
-            << "debug *begin = "
-            << *debug_begin
-            << '\n';
-    }
 
     for (auto x : range) {
         actual.push_back(x);
@@ -292,24 +249,12 @@ void check_case(
             break;
         }
     }
-
-    std::cout << "after iteration" << std::endl;
-
-    std::cout << "before assert_equal" << std::endl;
-
-    std::cout << "assert_equal entered" << std::endl;
-    std::cout << "expected.size() = " << expected.size() << std::endl;
-    std::cout << "actual.size() = " << actual.size() << std::endl;
-    std::cout << "checking sizes" << std::endl;
     
     assert_equal(
         expected,
         actual,
         context
     );
-
-    std::cout << "after assert_equal" << std::endl;
-
 }
 
 
@@ -373,37 +318,14 @@ void test_single_condition()
         conditions
     );
 
-    std::cout << "wheel_period = "
-              << range.wheel_period()
-              << '\n';
+    if (range.wheel_period() != 3) {
+        std::cerr << "TEST FAILURE: unexpected wheel period\n";
+        std::abort();
+    }
 
-    std::cout << "wheel_size = "
-              << range.wheel_size()
-              << '\n';
-
-    std::cout
-        << "wheel_period = "
-        << range.wheel_period()
-        << '\n';
-
-    std::cout
-        << "wheel_size = "
-        << range.wheel_size()
-        << '\n';
-
-    auto it = range.begin();
-    auto last = range.end();
-
-    std::cout
-        << "begin == end: "
-        << (it == last)
-        << '\n';
-
-    if (it != last) {
-        std::cout
-            << "*begin = "
-            << *it
-            << '\n';
+    if (range.wheel_size() != 2) {
+        std::cerr << "TEST FAILURE: unexpected wheel size\n";
+        std::abort();
     }
 
     check_case(
