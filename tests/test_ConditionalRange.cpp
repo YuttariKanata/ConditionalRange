@@ -243,25 +243,52 @@ void check_case(
 
     std::cout << "after ConditionalRange" << std::endl;
 
+    std::cout << "range.empty() = "
+            << range.empty()
+            << '\n';
+
+    std::cout << "range.min() = "
+            << range.min()
+            << '\n';
+
+    std::cout << "range.max() = "
+            << range.max()
+            << '\n';
+
+    std::cout << "range.wheel_period() = "
+            << range.wheel_period()
+            << '\n';
+
+    std::cout << "range.wheel_size() = "
+            << range.wheel_size()
+            << '\n';
+
+    std::cout << "after ConditionalRange" << std::endl;
+
     std::vector<int64_t> actual;
 
     std::cout << "before iteration" << std::endl;
 
-    std::size_t count = 0;
+    auto debug_begin = range.begin();
+    auto debug_end = range.end();
 
-    for (const int64_t x : range) {
+    std::cout
+        << "debug_begin == debug_end: "
+        << (debug_begin == debug_end)
+        << '\n';
+
+    if (debug_begin != debug_end) {
+        std::cout
+            << "debug *begin = "
+            << *debug_begin
+            << '\n';
+    }
+
+    for (auto x : range) {
         actual.push_back(x);
 
-        ++count;
-
-        if (count < 100) {
-            std::cout << "x = " << x << std::endl;
-        }
-
-        if (count > 1000) {
-            std::cout
-                << "ERROR: iteration exceeded 1000 elements"
-                << std::endl;
+        if (actual.size() > expected.size()) {
+            std::cerr << "ERROR: iteration produced more elements than expected\n";
             break;
         }
     }
@@ -813,6 +840,11 @@ void test_random()
 int main()
 {
     std::cout
+        << "ConditionalRange version = "
+        << ConditionalRange::VERSION
+        << '\n';
+
+    std::cout
         << "ConditionalRange test suite\n"
         << "============================\n";
 
@@ -847,7 +879,7 @@ int main()
     std::cout << "[PASS] boundaries\n";
 
     test::test_random();
-    std::cout << "[PASS] 5000 random tests\n";
+    std::cout << "[PASS] 100 random tests\n";
 
     std::cout
         << "\nALL TESTS PASSED\n";
