@@ -9,6 +9,7 @@
 #include <iterator>
 #include <cstddef>
 #include <optional>
+#include <iostream>
 
 class ConditionalRange {
 public:
@@ -251,6 +252,17 @@ private:
         std::vector<Condition> conditions
     )
     {
+        std::cout
+            << "[build] begin: min=" << min_
+            << ", max=" << max_
+            << ", empty_=" << empty_
+            << '\n';
+
+        std::cout
+            << "[build] min > max: "
+            << (min_ > max_)
+            << '\n';
+
         if (min_ > max_) {
             empty_ = true;
             return;
@@ -274,6 +286,11 @@ private:
 
         for (auto& condition : conditions) {
             if (all_false(condition.allowed)) {
+                std::cout
+                    << "[build] all_false! modulus="
+                    << condition.modulus
+                    << '\n';
+
                 empty_ = true;
                 return;
             }
@@ -428,6 +445,11 @@ private:
             * 残りの条件を見るまでもなく空。
             */
             if (wheel_residues_.empty()) {
+                std::cout
+                    << "[build] wheel became empty"
+                    << ", period=" << wheel_period_
+                    << '\n';
+
                 empty_ = true;
                 return;
             }
@@ -445,6 +467,12 @@ private:
         if (wheel_residues_.empty()) {
             wheel_residues_.push_back(0);
         }
+
+        std::cout
+            << "[build] end: period=" << wheel_period_
+            << ", wheel_size=" << wheel_residues_.size()
+            << ", empty_=" << empty_
+            << '\n';
     }
 
 public:

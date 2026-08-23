@@ -354,6 +354,31 @@ void test_single_condition()
               << range.wheel_size()
               << '\n';
 
+    std::cout
+        << "wheel_period = "
+        << range.wheel_period()
+        << '\n';
+
+    std::cout
+        << "wheel_size = "
+        << range.wheel_size()
+        << '\n';
+
+    auto it = range.begin();
+    auto last = range.end();
+
+    std::cout
+        << "begin == end: "
+        << (it == last)
+        << '\n';
+
+    if (it != last) {
+        std::cout
+            << "*begin = "
+            << *it
+            << '\n';
+    }
+
     check_case(
         -100,
         100,

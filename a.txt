@@ -78,7 +78,7 @@ Therefore the range produces:
 
 ---
 
-## Design Philosophy
+# Design Philosophy
 
 The central idea of `ConditionalRange` is:
 
@@ -124,7 +124,7 @@ Lazy iterator
 
 ---
 
-## 1. Conditions are periodic
+# 1. Conditions are periodic
 
 Every condition has a period.
 
@@ -163,7 +163,7 @@ It only needs to store the valid residue classes within one period.
 
 ---
 
-## 2. Combining conditions with a wheel
+# 2. Combining conditions with a wheel
 
 Suppose we have two conditions with moduli
 
@@ -216,7 +216,7 @@ is a candidate for the range.
 
 ---
 
-## 3. Incremental wheel construction
+# 3. Incremental wheel construction
 
 The wheel starts with the trivial periodic representation:
 
@@ -281,7 +281,7 @@ It expands only the residue classes that survived the previous conditions.
 
 ---
 
-## 4. Why the wheel is bounded
+# 4. Why the wheel is bounded
 
 The least common multiple of many moduli can become enormous.
 
@@ -317,7 +317,7 @@ The wheel is an optimization, not a requirement for correctness.
 
 ---
 
-## 5. Remaining conditions
+# 5. Remaining conditions
 
 A condition that is not incorporated into the wheel is still a normal
 condition.
@@ -360,7 +360,7 @@ arbitrarily many conditions.
 
 ---
 
-## 6. The wheel is an optimization layer
+# 6. The wheel is an optimization layer
 
 The semantics of `ConditionalRange` do not depend on whether a condition
 was placed into the wheel.
@@ -393,7 +393,7 @@ This distinction is important:
 
 ---
 
-## 7. Lazy iteration
+# 7. Lazy iteration
 
 `ConditionalRange` is a range, not a container of all results.
 
@@ -425,7 +425,7 @@ end state
 
 ---
 
-## 8. Candidate generation
+# 8. Candidate generation
 
 Suppose the wheel is:
 
@@ -469,7 +469,7 @@ the same residue class before moving to another residue class.
 
 ---
 
-## 9. Negative integers
+# 9. Negative integers
 
 Negative values are fully supported.
 
@@ -501,7 +501,7 @@ All condition checks therefore use the normalized residue.
 
 ---
 
-## 10. Overflow-aware arithmetic
+# 10. Overflow-aware arithmetic
 
 The range uses `int64_t` for its bounds and generated values.
 
@@ -543,7 +543,7 @@ merely an optimization detail.
 
 ---
 
-## 11. Empty ranges
+# 11. Empty ranges
 
 The range can become empty for several reasons.
 
@@ -578,7 +578,7 @@ In this case there is no reason to inspect later conditions.
 
 ---
 
-## 12. Trivial conditions
+# 12. Trivial conditions
 
 Some conditions contain no useful information.
 
@@ -608,7 +608,7 @@ These cases are handled before constructing the wheel.
 
 ---
 
-## 13. Composite moduli are supported
+# 13. Composite moduli are supported
 
 The modulus does not have to be prime.
 
@@ -647,7 +647,7 @@ rather than on primality, so no special prime-only logic is required.
 
 ---
 
-## 14. Duplicate moduli
+# 14. Duplicate moduli
 
 Multiple conditions may use the same modulus.
 
@@ -669,7 +669,7 @@ The implementation must therefore not assume that all moduli are distinct.
 
 ---
 
-## 15. Order of conditions
+# 15. Order of conditions
 
 Conditions are currently processed in increasing order of modulus when
 building the wheel.
@@ -694,7 +694,7 @@ performance as long as the resulting set of integers remains identical.
 
 ---
 
-## 16. Correctness model
+# 16. Correctness model
 
 The intended mathematical model is:
 
@@ -742,7 +742,7 @@ testing rather than as the production implementation.
 
 ---
 
-## 17. Iterator requirements
+# 17. Iterator requirements
 
 The iterator is intended to behave as a forward iterator.
 
@@ -773,7 +773,7 @@ next valid integer.
 
 ---
 
-## 18. Complexity philosophy
+# 18. Complexity philosophy
 
 The naive algorithm examines every integer in the range.
 
@@ -807,7 +807,7 @@ to construct the complete LCM of all moduli.
 
 ---
 
-## 19. Design priorities
+# 19. Design priorities
 
 The project prioritizes the following order:
 
@@ -827,7 +827,7 @@ In particular:
 
 ---
 
-## 20. Current implementation architecture
+# 20. Current implementation architecture
 
 The main class is:
 
@@ -869,7 +869,7 @@ Whether the range is known to contain no values.
 
 ---
 
-## 21. Public condition representation
+# 21. Public condition representation
 
 A condition is represented by:
 
@@ -891,7 +891,7 @@ Otherwise construction throws `std::invalid_argument`.
 
 ---
 
-## 22. Example
+# 22. Example
 
 ```cpp
 #include <ConditionalRange/ConditionalRange.hpp>
@@ -926,7 +926,7 @@ The range produces only values whose residue modulo `3` is `0` or `2`.
 
 ---
 
-## 23. Multiple conditions
+# 23. Multiple conditions
 
 Multiple conditions are combined with logical AND.
 
@@ -961,7 +961,7 @@ A value is returned only if it satisfies both tables.
 
 ---
 
-## 24. Testing philosophy
+# 24. Testing philosophy
 
 Testing is based on comparison with a naive reference implementation.
 
@@ -994,7 +994,7 @@ invariant remains true.
 
 ---
 
-## 25. Non-goals
+# 25. Non-goals
 
 `ConditionalRange` is not intended to:
 
@@ -1009,7 +1009,7 @@ invariant remains true.
 
 ---
 
-## 26. Future optimization directions
+# 26. Future optimization directions
 
 Possible future improvements include:
 
@@ -1038,7 +1038,7 @@ lazy increasing iteration
 
 ---
 
-## Summary
+# Summary
 
 `ConditionalRange` is fundamentally a **periodic constraint solver exposed
 as a C++ range**.
