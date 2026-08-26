@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <random>
 #include <string>
@@ -19,7 +20,7 @@ namespace test {
 // Condition
 // ------------------------------------------------------------
 
-using Condition = ConditionalRange::Condition;
+using Condition = cr::Condition;
 
 
 // ------------------------------------------------------------
@@ -233,7 +234,7 @@ void check_case(
     const auto expected =
         naive(min, max, conditions);
 
-    ConditionalRange range(
+    cr::ConditionalRange range(
         min,
         max,
         conditions
@@ -312,7 +313,7 @@ void test_single_condition()
         {3, b}
     };
 
-    ConditionalRange range(
+    cr::ConditionalRange range(
         -100,
         100,
         conditions
@@ -323,7 +324,7 @@ void test_single_condition()
         std::abort();
     }
 
-    if (range.wheel_size() != 2) {
+    if (range.wheel_residues().size() != 2) {
         std::cerr << "TEST FAILURE: unexpected wheel size\n";
         std::abort();
     }
@@ -726,8 +727,6 @@ void test_random()
 
     for (int i = 0; i < TEST_COUNT; ++i) {
 
-        std::cout << "TEST " << i << std::endl;
-
         /*
          * Give every test its own seed.
          * This makes it easy to reproduce a specific failure.
@@ -763,7 +762,7 @@ int main()
 {
     std::cout
         << "ConditionalRange version = "
-        << ConditionalRange::VERSION
+        << cr::ConditionalRange::VERSION_STRING
         << '\n';
 
     std::cout

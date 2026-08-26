@@ -9,7 +9,7 @@
 
 namespace test2 {
 
-using Condition = ConditionalRange::Condition;
+using Condition = cr::Condition;
 
 constexpr int64_t I64_MIN =
     std::numeric_limits<int64_t>::min();
@@ -477,27 +477,17 @@ void test_invalid_allowed_size()
 void test_remaining_conditions()
 {
     /*
-     * The LCM of these moduli is:
+     * 各素数 p において 0 以外の余りを許可 (p-1 個の true) することで
+     * trivial 判定を回避しつつ、ホイール周期を確実に拡張する。
      *
-     *   2*3*5*7*11*13*17*19 = 9,699,690
+     * LCM = 2*3*5*7*11*13*17*19 = 9,699,690 <= MAX_WHEEL_PERIOD
      *
-     * which is still <= MAX_WHEEL_PERIOD.
-     *
-     * Adding 23 makes the LCM exceed the wheel limit.
-     *
-     * Therefore the final condition must be kept in
-     * remaining_conditions_.
+     * ここに 23 を追加すると LCM が上限を超えるため、
+     * 23 の条件は確実かつ正常に remaining_conditions_ へ送られる。
      */
 
     const std::vector<int64_t> moduli = {
-        2,
-        3,
-        5,
-        7,
-        11,
-        13,
-        17,
-        19
+        2, 3, 5, 7, 11, 13, 17, 19
     };
 
     std::vector<Condition> conditions;
@@ -507,6 +497,8 @@ void test_remaining_conditions()
             static_cast<std::size_t>(modulus),
             true
         );
+        // 0 のみ禁止し、p-1 個の true にすることで trivial 化を防止
+        allowed[0] = false;
 
         conditions.emplace_back(
             modulus,
@@ -515,13 +507,9 @@ void test_remaining_conditions()
     }
 
     /*
-     * For modulus 23, only residue 7 is allowed.
+     * modulus 23 は 余り 7 のみ許可
      */
-    std::vector<bool> final_allowed(
-        23,
-        false
-    );
-
+    std::vector<bool> final_allowed(23, false);
     final_allowed[7] = true;
 
     conditions.emplace_back(
@@ -535,32 +523,88 @@ void test_remaining_conditions()
         conditions
     );
 
+    // 23 の条件が remaining_conditions_ に入っているか構造検証
+    require_equal(
+        static_cast<int64_t>(range.remaining_conditions().size()),
+        1,
+        "remaining_conditions size should be 1"
+    );
+
+    require_equal(
+        range.remaining_conditions()[0].modulus,
+        23,
+        "remaining condition modulus should be 23"
+    );
+
     /*
-     * The final condition cannot be incorporated into the wheel.
-     * The important part is that iteration still respects it.
+     * 範囲内 [0, 200] で各条件を満たす値をイテレート検証
+     * x % p != 0 (p in {2..19}) 且つ x % 23 == 7
      */
     std::vector<int64_t> actual;
-
     for (const auto x : range) {
         actual.push_back(x);
     }
 
-    const std::vector<int64_t> expected = {
-        7,
-        30,
-        53,
-        76,
-        99,
-        122,
-        145,
-        168,
-        191
-    };
+    /*
+     * ナイーブに全条件を満たす解をフィルタリングして expected を動的に生成する
+     */
+    std::vector<int64_t> expected;
+    for (int64_t x = 0; x <= 200; ++x) {
+        bool ok = true;
+
+        // 1. moduli {2, 3, 5, 7, 11, 13, 17, 19} について x % p != 0 を確認
+        for (const int64_t modulus : moduli) {
+            if (x % modulus == 0) {
+                ok = false;
+                break;
+            }
+        }
+
+        // 2. modulus 23 について x % 23 == 7 を確認
+        if (ok && (x % 23 != 7)) {
+            ok = false;
+        }
+
+        if (ok) {
+            expected.push_back(x);
+        }
+    }
 
     require_sequence(
         actual,
         expected,
-        "remaining condition after wheel limit"
+        "remaining condition integration test"
+    );
+}
+
+// オール true (Trivial 条件) がホイールを拡張せずスキップされるかのテスト
+void test_all_true_trivial_conditions()
+{
+    /*
+     * すべての要素が true の条件はホイール周期を増加させず
+     * 破棄されることを確認する。
+     */
+    const std::vector<int64_t> moduli = { 2, 3, 5 };
+    std::vector<Condition> conditions;
+
+    for (const int64_t modulus : moduli) {
+        std::vector<bool> allowed(static_cast<std::size_t>(modulus), true);
+        conditions.emplace_back(modulus, std::move(allowed));
+    }
+
+    ConditionalRange range(0, 10, conditions);
+
+    // ホイール周期が 1 のままであること
+    require_equal(
+        range.wheel_period(),
+        1,
+        "all-true conditions should not expand wheel_period"
+    );
+
+    // remaining_conditions も空であること
+    require(
+        range.remaining_conditions().empty(),
+        "all-true conditions should be discarded, not stored in remaining"
     );
 }
 
@@ -732,8 +776,8 @@ void test_iterator_increment_semantics()
 
 void test_default_iterator()
 {
-    ConditionalRange::iterator a;
-    ConditionalRange::iterator b;
+    ConditionalRange::Iterator a;
+    ConditionalRange::Iterator b;
 
     require(
         a == b,
@@ -741,7 +785,7 @@ void test_default_iterator()
     );
 
     require(
-        a == ConditionalRange::iterator(),
+        a == ConditionalRange::Iterator(),
         "default iterator equality"
     );
 }
@@ -857,6 +901,7 @@ int main()
     std::cout << "[PASS] invalid allowed size\n";
 
     test2::test_remaining_conditions();
+    test2::test_all_true_trivial_conditions();
     std::cout << "[PASS] remaining conditions\n";
 
     test2::test_remaining_condition_near_int64_max();

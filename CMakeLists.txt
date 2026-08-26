@@ -1,105 +1,48 @@
 cmake_minimum_required(VERSION 3.20)
+project(ConditionalRange CXX)
 
-project(ConditionalRange
-    VERSION 0.1.0
-    LANGUAGES CXX
-)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ------------------------------------------------------------
-# Library
-# ------------------------------------------------------------
-
-add_library(ConditionalRange INTERFACE)
-
-target_include_directories(ConditionalRange
-    INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_compile_features(ConditionalRange
-    INTERFACE
-        cxx_std_17
-)
-
-# GCC / Clang warnings
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(ConditionalRange
-        INTERFACE
-            -Wall
-            -Wextra
-            -Wpedantic
+# GCC / Clang 向けの基本コンパイルフラグ
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Wpedantic
+        -finput-charset=UTF-8
+        -fexec-charset=UTF-8
     )
 endif()
 
-# ------------------------------------------------------------
-# Example
-# ------------------------------------------------------------
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_executable(conditional_range_example
-    examples/basic.cpp
+# Header-only target
+add_library(ConditionalRange INTERFACE)
+target_include_directories(ConditionalRange INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(conditional_range_example
-    PRIVATE
-        ConditionalRange
-)
-
-# ------------------------------------------------------------
-# Benchmark
-# ------------------------------------------------------------
-
-add_executable(conditional_range_benchmark
-    benchmarks/benchmark_ConditionalRange.cpp
-)
-
-target_link_libraries(conditional_range_benchmark
-    PRIVATE
-        ConditionalRange
-)
-
-# ------------------------------------------------------------
 # Tests
-# ------------------------------------------------------------
+enable_testing()
 
-include(CTest)
+# メインテスト
+add_executable(unit_tests tests/test_ConditionalRange.cpp)
+target_link_libraries(unit_tests PRIVATE ConditionalRange)
+add_test(NAME unit_tests COMMAND unit_tests)
 
-if (BUILD_TESTING)
+# 追加するテスト (test2)
+add_executable(corner_case_tests tests/test2_ConditionalRange.cpp)
+target_link_libraries(corner_case_tests PRIVATE ConditionalRange)
+add_test(NAME corner_case_tests COMMAND corner_case_tests)
 
-    # --------------------------------------------------------
-    # Main tests
-    # --------------------------------------------------------
-
-    add_executable(conditional_range_tests
-        tests/test_ConditionalRange.cpp
+# ベンチマーク用のターゲット追加
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/benchmark_ConditionalRange.cpp")
+    add_executable(benchmark_ConditionalRange
+        benchmarks/benchmark_ConditionalRange.cpp
     )
-
-    target_link_libraries(conditional_range_tests
-        PRIVATE
-            ConditionalRange
+    target_include_directories(benchmark_ConditionalRange PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
-
-    add_test(
-        NAME ConditionalRangeTests
-        COMMAND conditional_range_tests
-    )
-
-
-    # --------------------------------------------------------
-    # Corner-case tests
-    # --------------------------------------------------------
-
-    add_executable(conditional_range_tests2
-        tests/test2_ConditionalRange.cpp
-    )
-
-    target_link_libraries(conditional_range_tests2
-        PRIVATE
-            ConditionalRange
-    )
-
-    add_test(
-        NAME ConditionalRangeCornerCaseTests
-        COMMAND conditional_range_tests2
-    )
-
 endif()

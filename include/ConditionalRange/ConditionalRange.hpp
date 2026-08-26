@@ -1,595 +1,385 @@
-#pragma once
+#ifndef CONDITIONAL_RANGE_HPP
+#define CONDITIONAL_RANGE_HPP
 
-#include <algorithm>
-#include <cstddef>
 #include <cstdint>
-#include <iterator>
-#include <limits>
-#include <stdexcept>
-#include <utility>
 #include <vector>
+#include <algorithm>
+#include <stdexcept>
+#include <numeric>
+#include <limits>
+#include <iterator>
+#include <iostream>
 
+namespace cr {
+
+struct Condition {
+    std::int64_t modulus;
+    std::vector<bool> allowed;
+
+    Condition(std::int64_t m, std::vector<bool> a)
+        : modulus(m), allowed(std::move(a)) {
+        if (modulus <= 0) {
+            throw std::invalid_argument("Modulus must be positive.");
+        }
+        if (static_cast<std::size_t>(modulus) != allowed.size()) {
+            throw std::invalid_argument("Allowed array size must equal modulus.");
+        }
+    }
+};
+
+// Safe mathematical positive modulo: returns r in [0, m)
+inline constexpr std::int64_t positive_mod(std::int64_t x, std::int64_t m) noexcept {
+    std::int64_t r = x % m;
+    if (r < 0) {
+        r += m;
+    }
+    return r;
+}
+
+// Floor division: floor(a / b) for b > 0
+inline constexpr std::int64_t floor_div(std::int64_t a, std::int64_t b) noexcept {
+    std::int64_t q = a / b;
+    std::int64_t r = a % b;
+    if (r != 0 && ((a < 0) ^ (b < 0))) {
+        q -= 1;
+    }
+    return q;
+}
+
+// Safe addition checking for int64_t overflow
+inline bool safe_add(std::int64_t a, std::int64_t b, std::int64_t& result) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    return !__builtin_add_overflow(a, b, &result);
+#else
+    if ((b > 0 && a > std::numeric_limits<std::int64_t>::max() - b) ||
+        (b < 0 && a < std::numeric_limits<std::int64_t>::min() - b)) {
+        return false;
+    }
+    result = a + b;
+    return true;
+#endif
+}
+
+// Safe multiplication checking for int64_t overflow
+inline bool safe_mul(std::int64_t a, std::int64_t b, std::int64_t& result) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    return !__builtin_mul_overflow(a, b, &result);
+#else
+    if (a == 0 || b == 0) {
+        result = 0;
+        return true;
+    }
+    if (a > 0) {
+        if (b > 0 && a > std::numeric_limits<std::int64_t>::max() / b) return false;
+        if (b < 0 && b < std::numeric_limits<std::int64_t>::min() / a) return false;
+    } else {
+        if (b > 0 && a < std::numeric_limits<std::int64_t>::min() / b) return false;
+        if (b < 0 && a < std::numeric_limits<std::int64_t>::max() / b) return false;
+    }
+    result = a * b;
+    return true;
+#endif
+}
 
 class ConditionalRange {
 public:
-    struct Condition {
-        int64_t modulus;
-        std::vector<bool> allowed;
+    static constexpr std::int64_t DEFAULT_MAX_WHEEL_PERIOD = 10'000'000;
+    static constexpr std::string_view VERSION_STRING = "1.0.0";
 
-        Condition(int64_t m, std::vector<bool> bits)
-            : modulus(m),
-              allowed(std::move(bits))
-        {
-            if (modulus <= 0) {
-                throw std::invalid_argument(
-                    "ConditionalRange: modulus must be positive"
-                );
+    class Iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type        = std::int64_t;
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = const std::int64_t*;
+        using reference         = std::int64_t;
+
+        Iterator() : parent_(nullptr), is_end_(true) {}
+
+        Iterator(const ConditionalRange* parent, bool is_end)
+            : parent_(parent), is_end_(is_end) {
+            if (!is_end_) {
+                if (parent_->empty_) {
+                    is_end_ = true;
+                } else {
+                    init_position();
+                }
+            }
+        }
+
+        reference operator*() const {
+            return current_value_;
+        }
+
+        Iterator& operator++() {
+            advance();
+            return *this;
+        }
+
+        Iterator operator++(int) {
+            Iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        bool operator==(const Iterator& other) const {
+            if (is_end_ && other.is_end_) return true;
+            if (is_end_ != other.is_end_) return false;
+            return parent_ == other.parent_ &&
+                   current_k_ == other.current_k_ &&
+                   residue_idx_ == other.residue_idx_;
+        }
+
+        bool operator!=(const Iterator& other) const {
+            return !(*this == other);
+        }
+
+    private:
+        const ConditionalRange* parent_ = nullptr;
+        std::int64_t current_k_ = 0;
+        std::size_t residue_idx_ = 0;
+        std::int64_t current_value_ = 0;
+        bool is_end_ = true;
+
+        void init_position() {
+            std::int64_t P = parent_->wheel_period_;
+            const auto& residues = parent_->wheel_residues_;
+
+            std::int64_t k_start = floor_div(parent_->min_, P);
+            std::int64_t target_r = positive_mod(parent_->min_, P);
+
+            // std::cerr << "[DEBUG] init_position: min_=" << parent_->min_ 
+            //           << ", P=" << P 
+            //           << ", k_start=" << k_start 
+            //           << ", target_r=" << target_r << "\n";
+
+            auto it = std::lower_bound(residues.begin(), residues.end(), target_r);
+            if (it != residues.end()) {
+                current_k_ = k_start;
+                residue_idx_ = static_cast<std::size_t>(std::distance(residues.begin(), it));
+            } else {
+                current_k_ = k_start + 1;
+                residue_idx_ = 0;
             }
 
-            if (allowed.size() != static_cast<std::size_t>(modulus)) {
-                throw std::invalid_argument(
-                    "ConditionalRange: allowed.size() must equal modulus"
-                );
+            // std::cerr << "[DEBUG] initial iterator state: current_k_=" << current_k_
+            //           << ", residue_idx_=" << residue_idx_ << "\n";
+
+            find_next_valid();
+        }
+
+        // イテレータの operator++ / operator++(int) から呼ばれる公開用 advance
+        void advance() {
+            if (is_end_) return;
+            advance_indices();
+            find_next_valid();
+        }
+
+        // 内部状態を1歩進める基本処理
+        void advance_indices() {
+            const std::size_t num_residues = parent_->wheel_residues_.size();
+            residue_idx_++;
+            if (residue_idx_ >= num_residues) {
+                residue_idx_ = 0;
+                if (current_k_ == std::numeric_limits<std::int64_t>::max()) {
+                    is_end_ = true;
+                    return;
+                }
+                current_k_++;
+            }
+        }
+
+        void advance_indices(std::size_t num_residues) {
+            residue_idx_++;
+            if (residue_idx_ >= num_residues) {
+                residue_idx_ = 0;
+                // current_k_ が INT64_MAX に達している場合はオーバーフローするので繰り上げ不可
+                if (current_k_ == std::numeric_limits<std::int64_t>::max()) {
+                    is_end_ = true;
+                    return;
+                }
+                current_k_++;
+            }
+        }
+
+        void find_next_valid() {
+            std::int64_t P = parent_->wheel_period_;
+            const auto& residues = parent_->wheel_residues_;
+            std::size_t num_residues = residues.size();
+
+            while (!is_end_) {
+                std::int64_t k_P;
+                if (!safe_mul(current_k_, P, k_P)) {
+                    if (current_k_ > 0) {
+                        is_end_ = true;
+                        return;
+                    } else {
+                        advance_indices(num_residues);
+                        continue;
+                    }
+                }
+
+                std::int64_t candidate;
+                if (!safe_add(k_P, residues[residue_idx_], candidate)) {
+                    if (k_P >= 0) {
+                        // 正方向の溢れは INT64_MAX 超えを意味するので終端
+                        is_end_ = true;
+                        return;
+                    } else {
+                        advance_indices(num_residues);
+                        continue;
+                    }
+                }
+
+                // k の符号に関わらず、candidate が max_ を超えたら
+                // これ以上 residue や k を増やしても candidate が小さくなることはないため即時終了
+                if (candidate > parent_->max_) {
+                    is_end_ = true;
+                    return;
+                }
+
+                if (candidate >= parent_->min_) {
+                    if (parent_->satisfies_remaining(candidate)) {
+                        current_value_ = candidate;
+                        return;
+                    }
+                }
+
+                advance_indices(num_residues);
             }
         }
     };
 
-    static constexpr const char* VERSION = "2026-08-23-FINAL";
+    ConditionalRange(
+        std::int64_t min_val,
+        std::int64_t max_val,
+        std::vector<Condition> conditions,
+        std::int64_t max_wheel_period = DEFAULT_MAX_WHEEL_PERIOD
+    ) : min_(min_val), max_(max_val), max_wheel_period_(max_wheel_period) {
 
-private:
-
-    /*
-     * The wheel is deliberately bounded.
-     *
-     * Conditions whose combined period would exceed this value are
-     * retained in remaining_conditions_ and checked only for wheel
-     * candidates.
-     */
-    static constexpr int64_t MAX_WHEEL_PERIOD = 10'000'000;
-
-    int64_t min_;
-    int64_t max_;
-
-    /*
-     * The wheel represents the set
-     *
-     *   { x | x mod wheel_period_ is in wheel_residues_ }.
-     *
-     * Residues are always normalized to [0, wheel_period_).
-     */
-    int64_t wheel_period_ = 1;
-    std::vector<int64_t> wheel_residues_{0};
-
-    /*
-     * Conditions which were not incorporated into the wheel.
-     *
-     * Every value produced by the wheel is checked against these
-     * conditions before being exposed by the iterator.
-     */
-    std::vector<Condition> remaining_conditions_;
-
-    bool empty_ = false;
-
-    // ============================================================
-    // Mathematical utilities
-    // ============================================================
-
-    static int64_t gcd_i64(int64_t a, int64_t b)
-    {
-        while (b != 0) {
-            const int64_t r = a % b;
-            a = b;
-            b = r;
-        }
-
-        return a;
-    }
-
-    /*
-     * Computes lcm(a, b) without overflowing int64_t.
-     *
-     * a and b are positive.
-     */
-    static bool try_lcm(
-        int64_t a,
-        int64_t b,
-        int64_t& result
-    )
-    {
-        const int64_t g = gcd_i64(a, b);
-        const int64_t a_div_g = a / g;
-
-        if (a_div_g > std::numeric_limits<int64_t>::max() / b) {
-            return false;
-        }
-
-        result = a_div_g * b;
-        return true;
-    }
-
-    /*
-     * Mathematical modulo:
-     *
-     *   0 <= result < m
-     *
-     * with m > 0.
-     */
-    static int64_t positive_mod(int64_t x, int64_t m)
-    {
-        const int64_t r = x % m;
-        return r < 0 ? r + m : r;
-    }
-
-    // ============================================================
-    // Condition utilities
-    // ============================================================
-
-    static bool all_true(const std::vector<bool>& bits)
-    {
-        for (bool bit : bits) {
-            if (!bit) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    static bool all_false(const std::vector<bool>& bits)
-    {
-        for (bool bit : bits) {
-            if (bit) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    static bool satisfies(
-        int64_t x,
-        const Condition& condition
-    )
-    {
-        const int64_t residue =
-            positive_mod(x, condition.modulus);
-
-        return condition.allowed[
-            static_cast<std::size_t>(residue)
-        ];
-    }
-
-    bool satisfies_remaining(int64_t x) const
-    {
-        for (const auto& condition : remaining_conditions_) {
-            if (!satisfies(x, condition)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    // ============================================================
-    // Wheel construction
-    // ============================================================
-
-    void build(std::vector<Condition> conditions)
-    {
         if (min_ > max_) {
             empty_ = true;
             return;
         }
 
-        /*
-         * Remove conditions which are either redundant or make the
-         * entire range impossible.
-         */
-        std::vector<Condition> useful;
-        useful.reserve(conditions.size());
+        // Trivial conditions check & Filtering
+        std::vector<Condition> effective_conditions;
+        for (auto& cond : conditions) {
+            bool all_true = true;
+            bool all_false = true;
+            for (bool b : cond.allowed) {
+                if (b) all_false = false;
+                else all_true = false;
+            }
 
-        for (auto& condition : conditions) {
-            if (all_false(condition.allowed)) {
+            // 全て false ならその時点で全域で解なし (空集合)
+            if (all_false) {
                 empty_ = true;
                 return;
             }
 
-            if (all_true(condition.allowed)) {
-                continue;
+            // 全て true (Trivial) でない、有効な条件のみを抽出
+            // (Trivial な条件は LCM に寄与せず、無視して次へ進む)
+            if (!all_true) {
+                effective_conditions.push_back(std::move(cond));
             }
-
-            useful.push_back(std::move(condition));
         }
 
-        /*
-         * Building the wheel from small moduli first tends to keep
-         * intermediate residue sets small.
-         *
-         * The order does not affect the mathematical result.
-         */
-        std::sort(
-            useful.begin(),
-            useful.end(),
-            [](const Condition& lhs, const Condition& rhs) {
-                return lhs.modulus < rhs.modulus;
-            }
-        );
+        // 有効な条件だけを modulus 昇順でソート
+        std::stable_sort(effective_conditions.begin(), effective_conditions.end(),
+            [](const Condition& a, const Condition& b) {
+                return a.modulus < b.modulus;
+            });
 
-        for (auto& condition : useful) {
-            int64_t new_period = 0;
+        // Initialize Wheel: period = 1, residues = {0}
+        wheel_period_ = 1;
+        wheel_residues_.assign(1, 0); // または clear() して push_back(0) / assign
 
-            if (!try_lcm(
-                    wheel_period_,
-                    condition.modulus,
-                    new_period
-                ) ||
-                new_period > MAX_WHEEL_PERIOD)
-            {
-                /*
-                 * Since wheel_period_ never decreases, a condition
-                 * which cannot be incorporated now cannot become
-                 * incorporable later either.
-                 *
-                 * All such conditions are therefore checked later
-                 * against wheel candidates.
-                 */
-                remaining_conditions_.push_back(
-                    std::move(condition)
-                );
+        for (auto& cond : effective_conditions) {
+            std::int64_t m = cond.modulus;
+            std::int64_t g = std::gcd(wheel_period_, m);
+            std::int64_t q = m / g;
+
+            std::int64_t next_period;
+            bool overflow = !safe_mul(wheel_period_, q, next_period);
+
+            // overflow または上限超えの場合のみ remaining に退避
+            if (overflow || next_period > max_wheel_period_) {
+                remaining_conditions_.push_back(std::move(cond));
                 continue;
             }
 
-            const int64_t gcd =
-                gcd_i64(
-                    wheel_period_,
-                    condition.modulus
-                );
+            std::vector<std::int64_t> new_residues;
+            new_residues.reserve(wheel_residues_.size() * static_cast<std::size_t>(q));
 
-            const int64_t copies =
-                condition.modulus / gcd;
-
-            std::vector<int64_t> next_residues;
-
-            /*
-             * Each old residue r expands to
-             *
-             *   r + k * old_period
-             *
-             * for k = 0 .. copies-1.
-             *
-             * These are exactly the residues modulo new_period
-             * belonging to the old residue class.
-             */
-            const std::size_t old_size =
-                wheel_residues_.size();
-
-            const std::size_t copies_size =
-                static_cast<std::size_t>(copies);
-
-            if (copies_size != 0 &&
-                old_size <=
-                    std::numeric_limits<std::size_t>::max()
-                    / copies_size)
-            {
-                next_residues.reserve(
-                    old_size * copies_size
-                );
-            }
-
-            for (const int64_t residue : wheel_residues_) {
-                for (int64_t k = 0; k < copies; ++k) {
-                    const int64_t candidate =
-                        residue + k * wheel_period_;
-
-                    /*
-                     * candidate is in [0, new_period), so this
-                     * modulo is already non-negative.
-                     */
-                    const int64_t condition_residue =
-                        candidate % condition.modulus;
-
-                    if (condition.allowed[
-                        static_cast<std::size_t>(
-                            condition_residue
-                        )
-                    ]) {
-                        next_residues.push_back(candidate);
+            for (std::int64_t k = 0; k < q; ++k) {
+                std::int64_t shift = k * wheel_period_;
+                for (std::int64_t r : wheel_residues_) {
+                    std::int64_t new_r = r + shift;
+                    if (cond.allowed[static_cast<std::size_t>(positive_mod(new_r, m))]) {
+                        new_residues.push_back(new_r);
                     }
                 }
             }
 
-            wheel_period_ = new_period;
-            wheel_residues_ = std::move(next_residues);
-
-            if (wheel_residues_.empty()) {
+            if (new_residues.empty()) {
                 empty_ = true;
                 return;
             }
-        }
 
-        /*
-         * The initial wheel {0} / period 1 already represents all
-         * integers. This also covers the no-condition case.
-         */
-        std::sort(
-            wheel_residues_.begin(),
-            wheel_residues_.end()
-        );
+            wheel_period_ = next_period;
+            wheel_residues_ = std::move(new_residues);
+        }
     }
 
-public:
-    // ============================================================
-    // Iterator
-    // ============================================================
-
-    class iterator {
-        const ConditionalRange* range_ = nullptr;
-
-        /*
-         * current_ is a LOWER BOUND, not necessarily a value which
-         * satisfies the range.
-         *
-         * seek_next_valid() finds the smallest valid value >=
-         * current_.
-         *
-         * This makes the iterator state substantially simpler than
-         * maintaining a separate "current residue series".
-         */
-        int64_t current_ = 0;
-
-        bool end_ = true;
-
-        void seek_next_valid()
-        {
-            if (range_ == nullptr ||
-                range_->empty_)
-            {
-                end_ = true;
-                return;
-            }
-
-            /*
-            * Find the smallest wheel candidate >= current_.
-            *
-            * current_ is a lower bound, not necessarily a valid value.
-            */
-            bool found = false;
-            int64_t best = 0;
-
-            const int64_t period =
-                range_->wheel_period_;
-
-            const int64_t current_residue =
-                positive_mod(current_, period);
-
-            for (const int64_t residue :
-                range_->wheel_residues_)
-            {
-                /*
-                * delta is in [0, period).
-                *
-                * residue and current_residue are both in
-                * [0, period), so their subtraction cannot overflow.
-                */
-                const int64_t delta =
-                    positive_mod(
-                        residue - current_residue,
-                        period
-                    );
-
-                /*
-                * We need:
-                *
-                *     candidate = current_ + delta
-                *
-                * to remain representable as int64_t.
-                *
-                * When current_ is negative, adding a non-negative delta
-                * cannot overflow upward beyond INT64_MAX.
-                *
-                * Therefore the overflow check is only necessary when
-                * current_ is non-negative.
-                */
-                if (current_ >= 0 &&
-                    delta >
-                        std::numeric_limits<int64_t>::max() - current_)
-                {
-                    continue;
-                }
-
-                const int64_t candidate =
-                    current_ + delta;
-
-                /*
-                * The candidate must lie inside the requested range.
-                */
-                if (candidate > range_->max_) {
-                    continue;
-                }
-
-                /*
-                * The wheel only represents the conditions incorporated
-                * into the wheel. Check every remaining condition here.
-                */
-                if (!range_->satisfies_remaining(candidate)) {
-                    continue;
-                }
-
-                /*
-                * Several wheel residues may produce candidates.
-                * Choose the smallest one so that the iterator remains
-                * monotonically increasing.
-                */
-                if (!found || candidate < best) {
-                    best = candidate;
-                    found = true;
-                }
-            }
-
-            if (!found) {
-                end_ = true;
-                return;
-            }
-
-            current_ = best;
-            end_ = false;
-        }
-
-    public:
-        using value_type = int64_t;
-        using difference_type = std::ptrdiff_t;
-        using iterator_category =
-            std::forward_iterator_tag;
-        using iterator_concept =
-            std::forward_iterator_tag;
-        using reference = int64_t;
-        using pointer = void;
-
-        iterator() = default;
-
-        explicit iterator(
-            const ConditionalRange* range,
-            bool is_end
-        )
-            : range_(range),
-              current_(0),
-              end_(is_end)
-        {
-            if (!is_end && range_ != nullptr) {
-                current_ = range_->min_;
-                seek_next_valid();
-            }
-        }
-
-        value_type operator*() const
-        {
-            return current_;
-        }
-
-        iterator& operator++()
-        {
-            if (end_) {
-                return *this;
-            }
-
-            /*
-             * The current value has already been returned.
-             *
-             * We need the next integer strictly greater than it.
-             *
-             * Avoid current_ + 1 when current_ == INT64_MAX.
-             */
-            if (current_ ==
-                std::numeric_limits<int64_t>::max())
-            {
-                end_ = true;
-                return *this;
-            }
-
-            ++current_;
-
-            /*
-             * seek_next_valid() now interprets current_ as a lower
-             * bound, so no residue-index bookkeeping is necessary.
-             */
-            seek_next_valid();
-
-            return *this;
-        }
-
-        iterator operator++(int)
-        {
-            iterator old = *this;
-            ++(*this);
-            return old;
-        }
-
-        friend bool operator==(
-            const iterator& lhs,
-            const iterator& rhs
-        )
-        {
-            /*
-             * All end iterators compare equal, as required for the
-             * usual range-for / forward-iterator use.
-             */
-            if (lhs.end_ && rhs.end_) {
-                return true;
-            }
-
-            return lhs.range_ == rhs.range_
-                && lhs.end_ == rhs.end_
-                && lhs.current_ == rhs.current_;
-        }
-
-        friend bool operator!=(
-            const iterator& lhs,
-            const iterator& rhs
-        )
-        {
-            return !(lhs == rhs);
-        }
-    };
-
-    // ============================================================
-    // Construction
-    // ============================================================
-
-    ConditionalRange(
-        int64_t min,
-        int64_t max,
-        std::vector<Condition> conditions
-    )
-        : min_(min),
-          max_(max)
-    {
-        build(std::move(conditions));
+    Iterator begin() const {
+        return Iterator(this, empty_);
     }
 
-    // ============================================================
-    // Iteration
-    // ============================================================
-
-    iterator begin() const
-    {
-        if (empty_) {
-            return end();
-        }
-
-        return iterator(this, false);
+    Iterator end() const {
+        return Iterator(this, true);
     }
 
-    iterator end() const
-    {
-        return iterator(this, true);
+    bool empty() const noexcept {
+        return empty_;
     }
 
-    // ============================================================
-    // Information
-    // ============================================================
-
-    int64_t min() const
-    {
-        return min_;
-    }
-
-    int64_t max() const
-    {
-        return max_;
-    }
-
-    int64_t wheel_period() const
-    {
+    std::int64_t wheel_period() const noexcept {
         return wheel_period_;
     }
 
-    std::size_t wheel_size() const
-    {
-        return wheel_residues_.size();
+    const std::vector<std::int64_t>& wheel_residues() const noexcept {
+        return wheel_residues_;
     }
 
-    bool empty() const
-    {
-        return empty_;
+    const std::vector<Condition>& remaining_conditions() const noexcept {
+        return remaining_conditions_;
+    }
+
+private:
+    std::int64_t min_;
+    std::int64_t max_;
+    std::int64_t max_wheel_period_;
+
+    std::int64_t wheel_period_ = 1;
+    std::vector<std::int64_t> wheel_residues_;
+    std::vector<Condition> remaining_conditions_;
+    bool empty_ = false;
+
+    bool satisfies_remaining(std::int64_t x) const noexcept {
+        for (const auto& cond : remaining_conditions_) {
+            std::int64_t r = positive_mod(x, cond.modulus);
+            if (!cond.allowed[static_cast<size_t>(r)]) {
+                return false;
+            }
+        }
+        return true;
     }
 };
+
+} // namespace cr
+
+using ConditionalRange = cr::ConditionalRange;
+using Condition = cr::Condition;
+
+#endif // CONDITIONAL_RANGE_HPP
