@@ -713,9 +713,7 @@ lcm
 
 ## 15. 条件の順序
 
-現在、Wheel 構築時には法の昇順で条件を処理します。
-
-これは主に、早い段階で有用な小さな Wheel を構築することを意図したものです。
+See [implementation notes](README_en.md#15-order-of-conditions).
 
 処理順序は数学的な結果を変更しません。
 

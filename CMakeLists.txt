@@ -37,6 +37,10 @@ add_executable(corner_case_tests tests/test2_ConditionalRange.cpp)
 target_link_libraries(corner_case_tests PRIVATE ConditionalRange)
 add_test(NAME corner_case_tests COMMAND corner_case_tests)
 
+add_executable(planning_tests tests/test_planning.cpp)
+target_link_libraries(planning_tests PRIVATE ConditionalRange)
+add_test(NAME planning_tests COMMAND planning_tests)
+
 # ベンチマーク用のターゲット追加
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/benchmark_ConditionalRange.cpp")
     add_executable(benchmark_ConditionalRange
@@ -46,3 +50,6 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/benchmark_ConditionalRange.cp
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 endif()
+
+add_executable(benchmark_planning benchmarks/benchmark_planning.cpp)
+target_link_libraries(benchmark_planning PRIVATE ConditionalRange)
