@@ -51,5 +51,8 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/benchmark_ConditionalRange.cp
     )
 endif()
 
+add_executable(benchmark_ConditionalRange benchmarks/benchmark_ConditionalRange.cpp)
+target_link_libraries(benchmark_ConditionalRange PRIVATE ConditionalRange)
+
 add_executable(benchmark_planning benchmarks/benchmark_planning.cpp)
 target_link_libraries(benchmark_planning PRIVATE ConditionalRange)
