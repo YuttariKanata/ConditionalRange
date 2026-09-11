@@ -83,6 +83,39 @@ inline bool safe_mul(std::int64_t a, std::int64_t b, std::int64_t& result) noexc
 #endif
 }
 
+static std::int64_t inverse_mod(std::int64_t a, std::int64_t m) noexcept {
+    // Requires coprime positive a,m.
+    std::int64_t r = m, next_r = a, t = 0, next_t = 1;
+    while (next_r != 0) {
+        const auto q = r / next_r;
+        const auto remainder = r - q * next_r;
+        const auto coefficient = t - q * next_t;
+        r = next_r; next_r = remainder;
+        t = next_t; next_t = coefficient;
+    }
+    return positive_mod(t, m);
+}
+
+static std::uint64_t multiply_mod(std::uint64_t a, std::uint64_t b,
+                                    std::uint64_t m) noexcept {
+#if defined(__SIZEOF_INT128__)
+    return static_cast<std::uint64_t>(__extension__ static_cast<unsigned __int128>(a) * b % m);
+#else
+    // a,b < m <= INT64_MAX keeps unsigned sums representable.
+    std::uint64_t result = 0;
+    while (b != 0) {
+        if (b & 1) {
+            result += a;
+            if (result >= m) result -= m;
+        }
+        b >>= 1;
+        a += a;
+        if (a >= m) a -= m;
+    }
+    return result;
+#endif
+}
+
 class ConditionalRange {
 public:
     static constexpr std::int64_t DEFAULT_MAX_WHEEL_PERIOD = 10'000'000;
@@ -99,7 +132,8 @@ public:
         Iterator() : parent_(nullptr), is_end_(true) {}
 
         Iterator(const ConditionalRange* parent, bool is_end)
-            : parent_(parent), is_end_(is_end) {
+            : parent_(parent)
+            , is_end_(is_end) {
             if (!is_end_) {
                 if (parent_->empty_) {
                     is_end_ = true;
@@ -135,6 +169,7 @@ public:
         bool operator==(const Iterator& other) const {
             if (is_end_ && other.is_end_) return true;
             if (is_end_ != other.is_end_) return false;
+
             return parent_ == other.parent_ &&
                    current_k_ == other.current_k_ &&
                    residue_idx_ == other.residue_idx_;
@@ -163,10 +198,10 @@ public:
             //           << ", k_start=" << k_start 
             //           << ", target_r=" << target_r << "\n";
 
-            auto it = std::lower_bound(residues.begin(), residues.end(), target_r);
+            auto it = std::ranges::lower_bound(residues, target_r);
             if (it != residues.end()) {
                 current_k_ = k_start;
-                residue_idx_ = static_cast<std::size_t>(std::distance(residues.begin(), it));
+                residue_idx_ = static_cast<std::size_t>(it - residues.begin());
             } else {
                 current_k_ = k_start + 1;
                 residue_idx_ = 0;
@@ -238,14 +273,15 @@ public:
                         advance_indices(num_residues);
                         continue;
                     }
-                } else if (!safe_add(k_P, residues[residue_idx_], candidate)) {
+                } else if (!safe_add(k_P, residues[residue_idx_], candidate)) [[unlikely]] {
                     if (k_P >= 0) {
                         // 正方向の溢れは INT64_MAX 超えを意味するので終端
                         is_end_ = true;
                         return;
                     } else {
-                        advance_indices(num_residues);
-                        continue;
+                        // ありえない
+                        std::cerr << "FATAL: [process] value is invalid (" << k_P << "," << residues[residue_idx_] << ")" << std::endl;
+                        std::terminate(); 
                     }
                 }
 
@@ -267,7 +303,7 @@ public:
             }
         }
 
-    };
+    }; // Iterator
 
     ConditionalRange(
         std::int64_t min_val,
@@ -388,16 +424,22 @@ private:
     std::vector<std::size_t> choose_order(const std::vector<PlanningCondition>& items) const {
         std::vector<std::size_t> order(items.size());
         std::iota(order.begin(), order.end(), std::size_t{0});
+
         if (order.size() < 2) return order;
+
         std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) {
             return items[a].condition.modulus < items[b].condition.modulus;
         });
+        
         auto selective = order;
+        
         std::stable_sort(selective.begin(), selective.end(), [&](auto a, auto b) {
             return static_cast<long double>(items[a].allowed_count) / items[a].condition.modulus <
                    static_cast<long double>(items[b].allowed_count) / items[b].condition.modulus;
         });
+        
         if (selective == order) return order;
+        
         // Independence is a cost estimate, not a correctness assumption.
         const auto estimate = [&](const auto& indices) {
             std::int64_t period = 1;
@@ -417,37 +459,6 @@ private:
             return std::pair{density, work};
         };
         return estimate(selective) < estimate(order) ? selective : order;
-    }
-
-    static std::int64_t inverse_mod(std::int64_t a, std::int64_t m) noexcept {
-        // Requires coprime positive a,m.
-        std::int64_t r = m, next_r = a, t = 0, next_t = 1;
-        while (next_r != 0) {
-            const auto q = r / next_r;
-            const auto remainder = r - q * next_r;
-            const auto coefficient = t - q * next_t;
-            r = next_r; next_r = remainder;
-            t = next_t; next_t = coefficient;
-        }
-        return positive_mod(t, m);
-    }
-
-    static std::uint64_t multiply_mod(std::uint64_t a, std::uint64_t b,
-                                      std::uint64_t m) noexcept {
-#if defined(__SIZEOF_INT128__)
-        __extension__ typedef unsigned __int128 wide_uint;
-        return static_cast<std::uint64_t>(static_cast<wide_uint>(a) * b % m);
-#else
-        // a,b < m <= INT64_MAX keeps unsigned sums representable.
-        std::uint64_t result = 0;
-        while (b != 0) {
-            if (b & 1) { result += a; if (result >= m) result -= m; }
-            b >>= 1;
-            a += a;
-            if (a >= m) a -= m;
-        }
-        return result;
-#endif
     }
 
     std::vector<std::int64_t> combine_sparse(const Condition& cond, std::int64_t g,
@@ -493,7 +504,7 @@ private:
         }
         return true;
     }
-};
+}; // ConditionalRange
 
 } // namespace cr
 

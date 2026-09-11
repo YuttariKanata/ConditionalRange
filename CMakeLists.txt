@@ -42,15 +42,6 @@ target_link_libraries(planning_tests PRIVATE ConditionalRange)
 add_test(NAME planning_tests COMMAND planning_tests)
 
 # ベンチマーク用のターゲット追加
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/benchmark_ConditionalRange.cpp")
-    add_executable(benchmark_ConditionalRange
-        benchmarks/benchmark_ConditionalRange.cpp
-    )
-    target_include_directories(benchmark_ConditionalRange PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-endif()
-
 add_executable(benchmark_ConditionalRange benchmarks/benchmark_ConditionalRange.cpp)
 target_link_libraries(benchmark_ConditionalRange PRIVATE ConditionalRange)
 
