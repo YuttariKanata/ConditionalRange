@@ -476,15 +476,7 @@ void test_invalid_allowed_size()
 
 void test_remaining_conditions()
 {
-    /*
-     * 各素数 p において 0 以外の余りを許可 (p-1 個の true) することで
-     * trivial 判定を回避しつつ、ホイール周期を確実に拡張する。
-     *
-     * LCM = 2*3*5*7*11*13*17*19 = 9,699,690 <= MAX_WHEEL_PERIOD
-     *
-     * ここに 23 を追加すると LCM が上限を超えるため、
-     * 23 の条件は確実かつ正常に remaining_conditions_ へ送られる。
-     */
+    // The full LCM exceeds the cap; the deferred subset is plan-dependent.
 
     const std::vector<int64_t> moduli = {
         2, 3, 5, 7, 11, 13, 17, 19
@@ -523,17 +515,14 @@ void test_remaining_conditions()
         conditions
     );
 
-    // 23 の条件が remaining_conditions_ に入っているか構造検証
-    require_equal(
-        static_cast<int64_t>(range.remaining_conditions().size()),
-        1,
-        "remaining_conditions size should be 1"
+    require(
+        !range.remaining_conditions().empty(),
+        "conditions exceeding the wheel budget must be deferred"
     );
 
-    require_equal(
-        range.remaining_conditions()[0].modulus,
-        23,
-        "remaining condition modulus should be 23"
+    require(
+        range.wheel_period() <= ConditionalRange::DEFAULT_MAX_WHEEL_PERIOD,
+        "wheel period must respect the configured cap"
     );
 
     /*

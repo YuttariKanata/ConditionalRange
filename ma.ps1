@@ -73,19 +73,27 @@ try {
 
     # 5. -Benchmark: ベンチマークバイナリの実行
     if ($Benchmark) {
-        $BenchExe = Join-Path $BuildDir "benchmark_ConditionalRange.exe"
+        $BenchExes = @(
+            "benchmark_ConditionalRange.exe",
+            "benchmark_planning.exe"
+        )
 
-        if (Test-Path $BenchExe) {
-            Write-Host "[INFO] Running benchmark: $BenchExe" -ForegroundColor Magenta
-            $BenchArgs = @()
-            if ($Filter -ne "") {
-                $BenchArgs += "--benchmark_filter=$Filter"
+        foreach ($BenchName in $BenchExes) {
+            $BenchExe = Join-Path $BuildDir $BenchName
+
+            if (Test-Path $BenchExe) {
+                Write-Host "`n[INFO] Running benchmark: $BenchExe" -ForegroundColor Magenta
+                $BenchArgs = @()
+                if ($Filter -ne "") {
+                    $BenchArgs += "--benchmark_filter=$Filter"
+                }
+                & $BenchExe @BenchArgs
+                if ($LASTEXITCODE -ne 0) { throw "Benchmark run failed: $BenchName" }
+            } else {
+                Write-Host "[WARN] Benchmark executable not found: $BenchExe" -ForegroundColor Red
             }
-            & $BenchExe @BenchArgs
-            if ($LASTEXITCODE -ne 0) { throw "Benchmark run failed." }
-        } else {
-            Write-Host "[WARN] Benchmark executable not found: $BenchExe" -ForegroundColor Red
         }
+        Write-Host ""
     }
 }
 finally {

@@ -9,6 +9,8 @@
 #include <limits>
 #include <iterator>
 #include <iostream>
+#include <string_view>
+#include <utility>
 
 namespace cr {
 
@@ -81,6 +83,39 @@ inline bool safe_mul(std::int64_t a, std::int64_t b, std::int64_t& result) noexc
 #endif
 }
 
+static std::int64_t inverse_mod(std::int64_t a, std::int64_t m) noexcept {
+    // Requires coprime positive a,m.
+    std::int64_t r = m, next_r = a, t = 0, next_t = 1;
+    while (next_r != 0) {
+        const auto q = r / next_r;
+        const auto remainder = r - q * next_r;
+        const auto coefficient = t - q * next_t;
+        r = next_r; next_r = remainder;
+        t = next_t; next_t = coefficient;
+    }
+    return positive_mod(t, m);
+}
+
+static std::uint64_t multiply_mod(std::uint64_t a, std::uint64_t b,
+                                    std::uint64_t m) noexcept {
+#if defined(__SIZEOF_INT128__)
+    return static_cast<std::uint64_t>(__extension__ static_cast<unsigned __int128>(a) * b % m);
+#else
+    // a,b < m <= INT64_MAX keeps unsigned sums representable.
+    std::uint64_t result = 0;
+    while (b != 0) {
+        if (b & 1) {
+            result += a;
+            if (result >= m) result -= m;
+        }
+        b >>= 1;
+        a += a;
+        if (a >= m) a -= m;
+    }
+    return result;
+#endif
+}
+
 class ConditionalRange {
 public:
     static constexpr std::int64_t DEFAULT_MAX_WHEEL_PERIOD = 10'000'000;
@@ -97,7 +132,8 @@ public:
         Iterator() : parent_(nullptr), is_end_(true) {}
 
         Iterator(const ConditionalRange* parent, bool is_end)
-            : parent_(parent), is_end_(is_end) {
+            : parent_(parent)
+            , is_end_(is_end) {
             if (!is_end_) {
                 if (parent_->empty_) {
                     is_end_ = true;
@@ -111,8 +147,16 @@ public:
             return current_value_;
         }
 
+#if defined(_MSC_VER)
+        __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+        __attribute__((always_inline))
+#endif
         Iterator& operator++() {
-            advance();
+            if (!is_end_) {
+                advance_indices();
+                find_next_valid();
+            }
             return *this;
         }
 
@@ -125,6 +169,7 @@ public:
         bool operator==(const Iterator& other) const {
             if (is_end_ && other.is_end_) return true;
             if (is_end_ != other.is_end_) return false;
+
             return parent_ == other.parent_ &&
                    current_k_ == other.current_k_ &&
                    residue_idx_ == other.residue_idx_;
@@ -153,10 +198,10 @@ public:
             //           << ", k_start=" << k_start 
             //           << ", target_r=" << target_r << "\n";
 
-            auto it = std::lower_bound(residues.begin(), residues.end(), target_r);
+            auto it = std::ranges::lower_bound(residues, target_r);
             if (it != residues.end()) {
                 current_k_ = k_start;
-                residue_idx_ = static_cast<std::size_t>(std::distance(residues.begin(), it));
+                residue_idx_ = static_cast<std::size_t>(it - residues.begin());
             } else {
                 current_k_ = k_start + 1;
                 residue_idx_ = 0;
@@ -165,13 +210,6 @@ public:
             // std::cerr << "[DEBUG] initial iterator state: current_k_=" << current_k_
             //           << ", residue_idx_=" << residue_idx_ << "\n";
 
-            find_next_valid();
-        }
-
-        // イテレータの operator++ / operator++(int) から呼ばれる公開用 advance
-        void advance() {
-            if (is_end_) return;
-            advance_indices();
             find_next_valid();
         }
 
@@ -202,32 +240,48 @@ public:
             }
         }
 
+        // Avoid an out-of-line call per increment.
+#if defined(_MSC_VER)
+        __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+        __attribute__((always_inline))
+#endif
         void find_next_valid() {
             std::int64_t P = parent_->wheel_period_;
             const auto& residues = parent_->wheel_residues_;
             std::size_t num_residues = residues.size();
 
+            if (!is_end_ && P == 1 && parent_->remaining_conditions_.empty()) {
+                current_value_ = current_k_;
+                is_end_ = current_value_ > parent_->max_;
+                return;
+            }
+
             while (!is_end_) {
-                std::int64_t k_P;
-                if (!safe_mul(current_k_, P, k_P)) {
+                std::int64_t k_P, candidate;
+                if (!safe_mul(current_k_, P, k_P)) [[unlikely]] {
                     if (current_k_ > 0) {
                         is_end_ = true;
                         return;
-                    } else {
+                    }
+                    // Here -2^64 < k*P+r < 0. C++20 modulo conversion recovers
+                    // valid negative values; nonnegative results are below INT64_MIN.
+                    candidate = static_cast<std::int64_t>(
+                        static_cast<std::uint64_t>(current_k_) * static_cast<std::uint64_t>(P) +
+                        static_cast<std::uint64_t>(residues[residue_idx_]));
+                    if (candidate >= 0) {
                         advance_indices(num_residues);
                         continue;
                     }
-                }
-
-                std::int64_t candidate;
-                if (!safe_add(k_P, residues[residue_idx_], candidate)) {
+                } else if (!safe_add(k_P, residues[residue_idx_], candidate)) [[unlikely]] {
                     if (k_P >= 0) {
                         // 正方向の溢れは INT64_MAX 超えを意味するので終端
                         is_end_ = true;
                         return;
                     } else {
-                        advance_indices(num_residues);
-                        continue;
+                        // ありえない
+                        std::cerr << "FATAL: [process] value is invalid (" << k_P << "," << residues[residue_idx_] << ")" << std::endl;
+                        std::terminate(); 
                     }
                 }
 
@@ -248,7 +302,8 @@ public:
                 advance_indices(num_residues);
             }
         }
-    };
+
+    }; // Iterator
 
     ConditionalRange(
         std::int64_t min_val,
@@ -263,39 +318,33 @@ public:
         }
 
         // Trivial conditions check & Filtering
-        std::vector<Condition> effective_conditions;
+        std::vector<PlanningCondition> effective_conditions;
         for (auto& cond : conditions) {
-            bool all_true = true;
-            bool all_false = true;
-            for (bool b : cond.allowed) {
-                if (b) all_false = false;
-                else all_true = false;
-            }
+            const auto allowed_count = static_cast<std::size_t>(
+                std::count(cond.allowed.begin(), cond.allowed.end(), true));
 
             // 全て false ならその時点で全域で解なし (空集合)
-            if (all_false) {
+            if (allowed_count == 0) {
                 empty_ = true;
                 return;
             }
 
             // 全て true (Trivial) でない、有効な条件のみを抽出
             // (Trivial な条件は LCM に寄与せず、無視して次へ進む)
-            if (!all_true) {
-                effective_conditions.push_back(std::move(cond));
+            if (allowed_count != cond.allowed.size()) {
+                effective_conditions.push_back({std::move(cond), allowed_count});
             }
         }
 
-        // 有効な条件だけを modulus 昇順でソート
-        std::stable_sort(effective_conditions.begin(), effective_conditions.end(),
-            [](const Condition& a, const Condition& b) {
-                return a.modulus < b.modulus;
-            });
+        const auto order = choose_order(effective_conditions);
 
         // Initialize Wheel: period = 1, residues = {0}
         wheel_period_ = 1;
         wheel_residues_.assign(1, 0); // または clear() して push_back(0) / assign
 
-        for (auto& cond : effective_conditions) {
+        for (auto index : order) {
+            auto& item = effective_conditions[index];
+            auto& cond = item.condition;
             std::int64_t m = cond.modulus;
             std::int64_t g = std::gcd(wheel_period_, m);
             std::int64_t q = m / g;
@@ -310,14 +359,24 @@ public:
             }
 
             std::vector<std::int64_t> new_residues;
-            new_residues.reserve(wheel_residues_.size() * static_cast<std::size_t>(q));
-
-            for (std::int64_t k = 0; k < q; ++k) {
-                std::int64_t shift = k * wheel_period_;
-                for (std::int64_t r : wheel_residues_) {
-                    std::int64_t new_r = r + shift;
-                    if (cond.allowed[static_cast<std::size_t>(positive_mod(new_r, m))]) {
-                        new_residues.push_back(new_r);
+            if (wheel_period_ == 1) {
+                new_residues.reserve(item.allowed_count);
+                for (std::int64_t r = 0; r < m; ++r) {
+                    if (cond.allowed[static_cast<std::size_t>(r)]) {
+                        new_residues.push_back(r);
+                    }
+                }
+            } else if (q > 1 && item.allowed_count < static_cast<std::size_t>(q) / 4) {
+                new_residues = combine_sparse(cond, g, q, item.allowed_count);
+            } else {
+                new_residues.reserve(wheel_residues_.size() * static_cast<std::size_t>(q));
+                for (std::int64_t k = 0; k < q; ++k) {
+                    const std::int64_t shift = k * wheel_period_;
+                    for (std::int64_t r : wheel_residues_) {
+                        const std::int64_t new_r = r + shift;
+                        if (cond.allowed[static_cast<std::size_t>(positive_mod(new_r, m))]) {
+                            new_residues.push_back(new_r);
+                        }
                     }
                 }
             }
@@ -357,6 +416,76 @@ public:
     }
 
 private:
+    struct PlanningCondition {
+        Condition condition;
+        std::size_t allowed_count;
+    };
+
+    std::vector<std::size_t> choose_order(const std::vector<PlanningCondition>& items) const {
+        std::vector<std::size_t> order(items.size());
+        std::iota(order.begin(), order.end(), std::size_t{0});
+
+        if (order.size() < 2) return order;
+
+        std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) {
+            return items[a].condition.modulus < items[b].condition.modulus;
+        });
+        
+        auto selective = order;
+        
+        std::stable_sort(selective.begin(), selective.end(), [&](auto a, auto b) {
+            return static_cast<long double>(items[a].allowed_count) / items[a].condition.modulus <
+                   static_cast<long double>(items[b].allowed_count) / items[b].condition.modulus;
+        });
+        
+        if (selective == order) return order;
+        
+        // Independence is a cost estimate, not a correctness assumption.
+        const auto estimate = [&](const auto& indices) {
+            std::int64_t period = 1;
+            long double density = 1, work = 0;
+            for (auto index : indices) {
+                const auto& item = items[index];
+                const auto m = item.condition.modulus;
+                const auto q = m / std::gcd(period, m);
+                std::int64_t next;
+                if (!safe_mul(period, q, next) || next > max_wheel_period_) continue;
+                const auto expansions = item.allowed_count < static_cast<std::size_t>(q) / 4
+                    ? item.allowed_count : static_cast<std::size_t>(q);
+                work += period * density * expansions;
+                density *= static_cast<long double>(item.allowed_count) / m;
+                period = next;
+            }
+            return std::pair{density, work};
+        };
+        return estimate(selective) < estimate(order) ? selective : order;
+    }
+
+    std::vector<std::int64_t> combine_sparse(const Condition& cond, std::int64_t g,
+                                            std::int64_t q, std::size_t count) const {
+        std::vector<std::int64_t> allowed;
+        allowed.reserve(count);
+        for (std::int64_t r = 0; r < cond.modulus; ++r) {
+            if (cond.allowed[static_cast<std::size_t>(r)]) allowed.push_back(r);
+        }
+        const auto inverse = inverse_mod((wheel_period_ / g) % q, q);
+        std::vector<std::int64_t> result;
+        result.reserve(wheel_residues_.size() * count);
+        for (auto r : wheel_residues_) {
+            const auto old_mod = r % cond.modulus;
+            for (auto a : allowed) {
+                const auto difference = a - old_mod;
+                if (difference % g != 0) continue;
+                const auto rhs = positive_mod(difference / g, q);
+                const auto t = static_cast<std::int64_t>(multiply_mod(rhs, inverse, q));
+                // 0 <= r + P*t < checked LCM.
+                result.push_back(r + wheel_period_ * t);
+            }
+        }
+        std::sort(result.begin(), result.end());
+        return result;
+    }
+
     std::int64_t min_;
     std::int64_t max_;
     std::int64_t max_wheel_period_;
@@ -375,7 +504,7 @@ private:
         }
         return true;
     }
-};
+}; // ConditionalRange
 
 } // namespace cr
 

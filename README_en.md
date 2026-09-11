@@ -671,10 +671,9 @@ The implementation must therefore not assume that all moduli are distinct.
 
 ## 15. Order of conditions
 
-Conditions are currently processed in increasing order of modulus when
-building the wheel.
-
-This is primarily intended to construct useful small wheels early.
+Wheel construction compares modulus and selectivity order under the same cap.
+Sparse joins use generalized CRT; other joins use expansion. The public API
+and default cap are unchanged, but the exposed internal plan may differ.
 
 The ordering does not change the mathematical result because all conditions
 represent an intersection:
@@ -691,6 +690,9 @@ AND
 
 The implementation may therefore change the processing strategy for
 performance as long as the resulting set of integers remains identical.
+
+See [benchmarks/README.md](benchmarks/README.md) for separate construction and
+iteration measurements.
 
 ---
 
